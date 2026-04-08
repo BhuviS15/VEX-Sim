@@ -1,0 +1,31 @@
+body {
+    background: #222;
+    color: white;
+    font-family: sans-serif;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+}
+
+#container {
+    display: flex;
+    gap: 20px;
+}
+
+canvas {
+    background: #444;
+    border: 2px solid #666;
+    cursor: crosshair;
+}
+
+#controls {
+    background: #333;
+    padding: 20px;
+    border-radius: 8px;
+    width: 250px;
+}
+
+input {
+    width: 100%;
+    margin-bottom: 10px;
+}

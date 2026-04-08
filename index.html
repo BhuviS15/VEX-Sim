@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>VEX-Sim: Odometry Lab</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div id="container">
+        <canvas id="fieldCanvas" width="600" height="600"></canvas>
+        <div id="controls">
+            <h2>Robot Config</h2>
+            <label>Track Width (in): <input type="number" id="trackWidth" value="12"></label>
+            <label>Wheel Slip: <input type="range" id="slip" min="0" max="0.1" step="0.01" value="0"></label>
+            <hr>
+            <div id="telemetry">
+                <p>Ghost (Odom): <span id="ghostPos">0, 0, 0</span></p>
+                <p>Solid (Actual): <span id="solidPos">0, 0, 0</span></p>
+            </div>
+            <button onclick="resetSim()">Reset Simulation</button>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
