@@ -28,6 +28,7 @@ The goal is to evolve this from a simple movement simulator into a full-scale au
 * [ ] Distance-Based Sequencing: Trigger events when the robot is X inches from a waypoint.
 
 ### Phase 3: Hardware Groups & UI
+* [ ] Field: Add standard field and customizable field with custom sizing options.
 * [ ] Device Manager: Define custom motor groups (e.g., "Bottom Intake", "Cata") and pneumatics in the sidebar.
 * [ ] Timeline Visualizer: A bottom-bar "Gantt chart" showing when motors/pistons are active during the 15-second run.
 * [ ] Export to PROS: A "Copy Code" button that generates the C++ PROS/LemLib code for the designed path and actions.
@@ -47,7 +48,6 @@ $$dDist = \frac{Power_L + Power_R}{2}$$
 
 ### Running the Project
 * Clone the repository.
-* Ensure field.png (600x600px) is in the root directory for the background.
 * Open index.html in any modern web browser.
 
 “Simulate once, win every time.”
