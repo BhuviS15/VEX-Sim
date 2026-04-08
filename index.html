@@ -2,24 +2,52 @@
 <html>
 
 <head>
-    <title>VEX-Sim: Odometry Lab</title>
+    <title>VEX-Sim | Path Editor</title>
     <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
-    <div id="container">
-        <canvas id="fieldCanvas" width="600" height="600"></canvas>
-        <div id="controls">
-            <h2>Robot Config</h2>
-            <label>Track Width (in): <input type="number" id="trackWidth" value="12"></label>
-            <label>Wheel Slip: <input type="range" id="slip" min="0" max="0.1" step="0.01" value="0"></label>
-            <hr>
-            <div id="telemetry">
-                <p>Ghost (Odom): <span id="ghostPos">0, 0, 0</span></p>
-                <p>Solid (Actual): <span id="solidPos">0, 0, 0</span></p>
+    <div class="app-shell">
+        <aside class="sidebar">
+            <div class="logo">VEX-Sim <span class="version">v2.0</span></div>
+
+            <section class="config-group">
+                <h3>Robot Config</h3>
+                <div class="input-row">
+                    <label>Track Width</label>
+                    <input type="number" id="trackWidth" value="12">
+                </div>
+            </section>
+
+            <section class="timeline-group">
+                <h3>Autonomous Path</h3>
+                <div id="path-list" class="scroll-list">
+                    <div class="path-item">1. Start (300, 300)</div>
+                </div>
+                <button class="primary-btn" onclick="runPath()">▶ Run Autonomous</button>
+                <button class="secondary-btn" onclick="resetRobot()">↺ Reset Position</button>
+            </section>
+
+            <section class="config-group">
+                <h3>Robot Config</h3>
+                <div class="input-row">
+                    <label>Slip Error: <span id="slip-val">0</span></label>
+                    <input type="range" id="slip" min="0" max="0.1" step="0.01" value="0"
+                        oninput="updateSlipUI(this.value)">
+                </div>
+                <div class="input-row">
+                    <label>Consistent Drift</label>
+                    <input type="checkbox" id="isConsistent">
+                </div>
+            </section>
+        </aside>
+
+        <main class="viewport">
+            <div class="canvas-container">
+                <canvas id="fieldCanvas" width="600" height="600"></canvas>
+                <div class="coord-overlay">X: <span id="ui-x">0</span> Y: <span id="ui-y">0</span></div>
             </div>
-            <button onclick="resetSim()">Reset Simulation</button>
-        </div>
+        </main>
     </div>
     <script src="script.js"></script>
 </body>
