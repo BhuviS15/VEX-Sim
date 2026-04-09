@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
     <title>VEX-Sim | Path Editor</title>
     <link rel="stylesheet" href="style.css">
 </head>
@@ -26,18 +27,40 @@
                 </div>
                 <button class="primary-btn" onclick="runPath()">▶ Run Autonomous</button>
                 <button class="secondary-btn" onclick="resetRobot()">↺ Reset Position</button>
+                <button class="secondary-btn" style="background: #622;" onclick="clearPath()">🗑️ Clear Path</button>
             </section>
 
             <section class="config-group">
-                <h3>Robot Config</h3>
+                <h3>Drift & Slip</h3>
                 <div class="input-row">
-                    <label>Slip Error: <span id="slip-val">0</span></label>
-                    <input type="range" id="slip" min="0" max="0.1" step="0.01" value="0"
-                        oninput="updateSlipUI(this.value)">
+                    <label>Mode</label>
+                    <select id="slipMode" onchange="toggleSlipUI()">
+                        <option value="random">Random Jitter</option>
+                        <option value="constant">Constant Bias</option>
+                    </select>
                 </div>
-                <div class="input-row">
-                    <label>Consistent Drift</label>
-                    <input type="checkbox" id="isConsistent">
+
+                <div id="random-ui">
+                    <div class="input-row">
+                        <label>Intensity: <span id="slip-val">0</span></label>
+                        <input type="range" id="slipIntensity" min="0" max="0.1" step="0.01" value="0"
+                            oninput="document.getElementById('slip-val').innerText = this.value">
+                    </div>
+                </div>
+
+                <div id="constant-ui" style="display:none;">
+                    <div class="input-row">
+                        <label>Weak Side</label>
+                        <select id="biasSide">
+                            <option value="L">Left Motor</option>
+                            <option value="R">Right Motor</option>
+                        </select>
+                    </div>
+                    <div class="input-row">
+                        <label>Loss: <span id="bias-val">5</span>%</label>
+                        <input type="range" id="biasAmount" min="0" max="0.2" step="0.01" value="0.05"
+                            oninput="document.getElementById('bias-val').innerText = Math.round(this.value * 100)">
+                    </div>
                 </div>
             </section>
         </aside>

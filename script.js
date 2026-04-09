@@ -1,27 +1,38 @@
-// 1. SETUP & VARIABLES
+// 1. STATE
 const canvas = document.getElementById('fieldCanvas');
 const ctx = canvas.getContext('2d');
 
-let solid = { x: 300, y: 300, theta: 0 }; // The Real Robot
-let ghost = { x: 300, y: 300, theta: 0 }; // The Sensor Data
-let target = null;
+let isRunning = false;
+let solid = { x: 300, y: 300, theta: 0 };
+let ghost = { x: 300, y: 300, theta: 0 };
+
 let path = [];
 let currentWaypointIndex = 0;
-let leftBias = 1;
-let rightBias = 1;
+let leftMultiplier = 1;
+let rightMultiplier = 1;
 
-// Load Field Image (Optional - ensure you have field.png in your folder)
 const fieldImg = new Image();
 fieldImg.src = 'field.png';
 
-// 2. USER INTERACTION
-canvas.addEventListener('mousedown', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+// 2. UI HELPERS
+function toggleSlipUI() {
+    const mode = document.getElementById('slipMode').value;
+    document.getElementById('random-ui').style.display = mode === 'random' ? 'block' : 'none';
+    document.getElementById('constant-ui').style.display = mode === 'constant' ? 'block' : 'none';
+}
 
-    target = { x: mouseX, y: mouseY };
-    path.push({ ...target });
+function updatePathUI() {
+    const list = document.getElementById('path-list');
+    let html = `<div class="path-item">1. Start (300, 300)</div>`;
+    html += path.map((p, i) => `<div class="path-item">${i + 2}. Target (${Math.round(p.x)}, ${Math.round(p.y)})</div>`).join('');
+    list.innerHTML = html;
+}
+
+// 3. INTERACTION
+canvas.addEventListener('mousedown', (e) => {
+    if (isRunning) return;
+    const rect = canvas.getBoundingClientRect();
+    path.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     updatePathUI();
 });
 
@@ -31,177 +42,136 @@ canvas.addEventListener('mousemove', (e) => {
     document.getElementById('ui-y').innerText = Math.round(e.clientY - rect.top);
 });
 
-function updatePathUI() {
-    const list = document.getElementById('path-list');
-    if (list) {
-        list.innerHTML = path.map((p, i) =>
-            `<div class="path-item">${i + 1}. Target (${Math.round(p.x)}, ${Math.round(p.y)})</div>`
-        ).join('');
-    }
-}
-
-function updateSlipUI(val) {
-    // Updates the text next to the slider
-    document.getElementById('slip-val').innerText = val;
-}
-
 function resetRobot() {
     isRunning = false;
     solid = { x: 300, y: 300, theta: 0 };
     ghost = { x: 300, y: 300, theta: 0 };
     currentWaypointIndex = 0;
-    draw();
+}
+
+function clearPath() {
+    path = [];
+    resetRobot();
+    updatePathUI();
 }
 
 function runPath() {
     if (path.length === 0) return;
+    resetRobot();
 
-    // Reset positions
-    solid = { x: 300, y: 300, theta: 0 };
-    ghost = { x: 300, y: 300, theta: 0 };
+    // Prepare Constant Bias if selected
+    const mode = document.getElementById('slipMode').value;
+    if (mode === 'constant') {
+        const side = document.getElementById('biasSide').value;
+        const loss = parseFloat(document.getElementById('biasAmount').value);
+        leftMultiplier = (side === 'L') ? (1 - loss) : 1;
+        rightMultiplier = (side === 'R') ? (1 - loss) : 1;
+    } else {
+        leftMultiplier = 1;
+        rightMultiplier = 1;
+    }
 
-    // Generate a fixed bias just in case the user wants "Consistent" mode
-    let slipIntensity = parseFloat(document.getElementById('slip').value) || 0;
-    leftBias = 1 + ((Math.random() - 0.5) * 2 * slipIntensity);
-    rightBias = 1 + ((Math.random() - 0.5) * 2 * slipIntensity);
-
-    currentWaypointIndex = 0;
     isRunning = true;
 }
 
-// 3. MATH & PID LOGIC
+// 4. PHYSICS & PID
 function driveToTarget(targetPos, robot) {
     if (!targetPos) return { l: 0, r: 0 };
-
     let dx = targetPos.x - robot.x;
     let dy = targetPos.y - robot.y;
-    let distanceError = Math.sqrt(dx * dx + dy * dy);
+    let dist = Math.hypot(dx, dy);
 
-    // Stop if we are within 5 pixels of target
-    if (distanceError < 5) return { l: 0, r: 0 };
+    if (dist < 5) return { l: 0, r: 0 };
 
-    // 1. Linear Speed (P-Controller)
-    let kP_dist = 0.1;
-    let speed = distanceError * kP_dist;
-    speed = Math.min(speed, 5); // Cap max speed
-
-    // 2. Heading/Angular (P-Controller)
+    let speed = Math.min(dist * 0.1, 5); // Linear P
     let targetAngle = Math.atan2(dy, dx);
-    let angleError = targetAngle - robot.theta;
+    let angleErr = targetAngle - robot.theta;
 
-    // Normalize angle error to keep it between -PI and PI
-    while (angleError > Math.PI) angleError -= Math.PI * 2;
-    while (angleError < -Math.PI) angleError += Math.PI * 2;
+    while (angleErr > Math.PI) angleErr -= Math.PI * 2;
+    while (angleErr < -Math.PI) angleErr += Math.PI * 2;
 
-    let kP_turn = 3.0;
-    let turn = angleError * kP_turn;
-
-    return {
-        l: speed + turn,
-        r: speed - turn
-    };
+    let turn = angleErr * 2.0; // Angular P
+    return { l: speed + turn, r: speed - turn };
 }
 
-// 4. THE MAIN LOOP (Physics & Logic)
-let isRunning = false;
-
 function update() {
-    // 1. Logic & Physics (Only runs if 'isRunning' is true and there is a path)
-    if (isRunning && path.length > 0 && currentWaypointIndex < path.length) {
-        let currentTarget = path[currentWaypointIndex];
-        let powers = driveToTarget(currentTarget, solid);
+    if (isRunning && currentWaypointIndex < path.length) {
+        let target = path[currentWaypointIndex];
+        let powers = driveToTarget(target, solid);
 
-        // Check if we arrived at the current waypoint (Threshold: 7 pixels)
-        let dx = currentTarget.x - solid.x;
-        let dy = currentTarget.y - solid.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 7) {
+        // Check if reached waypoint
+        if (Math.hypot(target.x - solid.x, target.y - solid.y) < 8) {
             currentWaypointIndex++;
         }
 
-        // Get Configuration from UI
-        let trackWidth = parseFloat(document.getElementById('trackWidth').value) || 12;
-        let slipIntensity = parseFloat(document.getElementById('slip').value) || 0;
-        let isConsistent = document.getElementById('isConsistent').checked;
+        const mode = document.getElementById('slipMode').value;
+        const trackWidth = parseFloat(document.getElementById('trackWidth').value) || 12;
 
-        let leftActual, rightActual;
+        let leftDisp, rightDisp;
 
-        if (isConsistent) {
-            // Use the fixed bias generated at the start of the run
-            leftActual = powers.l * leftBias;
-            rightActual = powers.r * rightBias;
+        if (mode === 'constant') {
+            // Constant hardware bias
+            leftDisp = powers.l * leftMultiplier;
+            rightDisp = powers.r * rightMultiplier;
         } else {
-            // Generate new random noise every single frame (the "jittery" slip)
-            let leftDrift = 1 + ((Math.random() - 0.5) * 2 * slipIntensity);
-            let rightDrift = 1 + ((Math.random() - 0.5) * 2 * slipIntensity);
-            leftActual = powers.l * leftDrift;
-            rightActual = powers.r * rightDrift;
+            // Random jitter intensity
+            let intensity = parseFloat(document.getElementById('slipIntensity').value);
+            leftDisp = powers.l * (1 + (Math.random() - 0.5) * intensity * 2);
+            rightDisp = powers.r * (1 + (Math.random() - 0.5) * intensity * 2);
         }
 
-        let dThetaSolid = (leftActual - rightActual) / trackWidth;
-        let dDistSolid = (leftActual + rightActual) / 2;
-        solid.theta += dThetaSolid;
-        solid.x += dDistSolid * Math.cos(solid.theta);
-        solid.y += dDistSolid * Math.sin(solid.theta);
+        // Update Solid Robot (Actual Physical Movement)
+        solid.theta += (leftDisp - rightDisp) / trackWidth;
+        let dSolid = (leftDisp + rightDisp) / 2;
+        solid.x += dSolid * Math.cos(solid.theta);
+        solid.y += dSolid * Math.sin(solid.theta);
 
-        // Ghost Robot (The "Ideal" Robot/Internal Odometry)
-        // This follows the theoretical code exactly with 0 slip.
-        let dThetaGhost = (powers.l - powers.r) / trackWidth;
-        let dDistGhost = (powers.l + powers.r) / 2;
-        ghost.theta += dThetaGhost;
-        ghost.x += dDistGhost * Math.cos(ghost.theta);
-        ghost.y += dDistGhost * Math.sin(ghost.theta);
+        // Update Ghost Robot (Perfect Sensor Math)
+        ghost.theta += (powers.l - powers.r) / trackWidth;
+        let dGhost = (powers.l + powers.r) / 2;
+        ghost.x += dGhost * Math.cos(ghost.theta);
+        ghost.y += dGhost * Math.sin(ghost.theta);
     }
 
-    // 2. Rendering (Always runs so the screen stays alive)
     draw();
-
-    // 3. Loop
     requestAnimationFrame(update);
 }
 
 // 5. DRAWING
-function drawRobot(robot, color, alpha) {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.translate(robot.x, robot.y);
-    ctx.rotate(robot.theta);
-
-    // Chassis (Size: 36x36)
-    ctx.fillStyle = color;
-    ctx.fillRect(-18, -18, 36, 36);
-
-    // Heading Indicator (White rectangle at the front)
-    ctx.fillStyle = "white";
-    ctx.fillRect(10, -5, 8, 10);
-    ctx.restore();
-}
-
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Background
-    if (fieldImg.complete && fieldImg.width > 0) {
-        ctx.drawImage(fieldImg, 0, 0, canvas.width, canvas.height);
-    } else {
-        ctx.fillStyle = "#1e1e1e"; // Darker background for visibility
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    // Simple Background
+    ctx.fillStyle = "#1e1e1e";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Path Lines
+    // Path (Straight Lines)
     if (path.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
-        ctx.setLineDash([5, 5]);
-        ctx.moveTo(300, 300); // Start position
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.moveTo(300, 300);
         path.forEach(p => ctx.lineTo(p.x, p.y));
         ctx.stroke();
-        ctx.setLineDash([]);
+        path.forEach(p => {
+            ctx.fillStyle = "var(--accent)";
+            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+        });
     }
 
-    // Draw the Robots
-    drawRobot(ghost, '#007bff', 0.5); // Blue (Sensor/Ghost)
-    drawRobot(solid, '#eb4034', 1.0); // Red (Actual/Solid)
+    renderBot(ghost, "#ff8fb1", 0.5); // Pink Ghost
+    renderBot(solid, "#4aa7ff", 1.0); // Blue Solid
 }
 
-// Start the loop immediately so we can see the robot at the start
+function renderBot(bot, color, alpha) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(bot.x, bot.y);
+    ctx.rotate(bot.theta);
+    ctx.fillStyle = color;
+    ctx.fillRect(-18, -18, 36, 36);
+    ctx.fillStyle = "white"; // Front
+    ctx.fillRect(12, -2, 6, 4);
+    ctx.restore();
+}
+
 update();
