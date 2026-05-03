@@ -10,16 +10,23 @@
 <body>
     <div class="app-shell">
         <aside class="sidebar">
-            <div class="logo">VEX-Sim <span class="version">v2.0</span></div>
+            <div class="logo">VEX-Sim <span class="version">v2.1</span></div>
 
+            <!-- ── ROBOT CONFIG ─────────────────────────────────────────── -->
             <section class="config-group">
                 <h3>Robot Config</h3>
                 <div class="input-row">
-                    <label>Track Width</label>
-                    <input type="number" id="trackWidth" value="12">
+                    <label>Track Width: <span id="track-val">30</span> in</label>
+                </div>
+                <input type="range" id="trackWidth" min="20" max="40" step="0.5" value="30"
+                    style="width:100%; margin-top:6px;"
+                    oninput="document.getElementById('track-val').innerText = this.value">
+                <div class="input-row" style="font-size:0.75rem; color:#666; margin-top:4px;">
+                    <span>20 in</span><span>40 in</span>
                 </div>
             </section>
 
+            <!-- ── AUTONOMOUS PATH ──────────────────────────────────────── -->
             <section class="timeline-group">
                 <h3>Autonomous Path</h3>
                 <div id="path-list" class="scroll-list">
@@ -30,24 +37,33 @@
                 <button class="secondary-btn" style="background: #622;" onclick="clearPath()">🗑️ Clear Path</button>
             </section>
 
+            <!-- ── DRIFT & SLIP ─────────────────────────────────────────── -->
             <section class="config-group">
-                <h3>Drift & Slip</h3>
+                <h3>Drift &amp; Slip Mode</h3>
+
                 <div class="input-row">
-                    <label>Slip</label>
+                    <label>Error Type</label>
                     <select id="slipMode" onchange="toggleSlipUI()">
                         <option value="random">Random Jitter</option>
                         <option value="constant">Constant Bias</option>
+                        <option value="encoder">Encoder Noise</option>
+                        <option value="imu">IMU Heading Drift</option>
+                        <option value="accel">Asymmetric Acceleration</option>
                     </select>
                 </div>
 
+                <!-- Random Jitter -->
                 <div id="random-ui">
                     <div class="input-row">
                         <label>Intensity: <span id="slip-val">0</span></label>
                         <input type="range" id="slipIntensity" min="0" max="0.1" step="0.01" value="0"
                             oninput="document.getElementById('slip-val').innerText = this.value">
                     </div>
+                    <p class="mode-desc">Adds random per-tick noise to both wheel outputs. Simulates low-traction
+                        surfaces or loose encoder cables.</p>
                 </div>
 
+                <!-- Constant Bias -->
                 <div id="constant-ui" style="display:none;">
                     <div class="input-row">
                         <label>Weak Side</label>
@@ -57,18 +73,93 @@
                         </select>
                     </div>
                     <div class="input-row">
-                        <label>Loss: <span id="bias-val">5</span>%</label>
+                        <label>Power Loss: <span id="bias-val">5</span>%</label>
                         <input type="range" id="biasAmount" min="0" max="0.2" step="0.01" value="0.05"
                             oninput="document.getElementById('bias-val').innerText = Math.round(this.value * 100)">
                     </div>
+                    <p class="mode-desc">One drivetrain side permanently outputs less power. Simulates a weaker motor,
+                        worn gear, or uneven weight distribution.</p>
+                </div>
+
+                <!-- Encoder Noise -->
+                <div id="encoder-ui" style="display:none;">
+                    <div class="input-row">
+                        <label>Noise Scale: <span id="encoder-val">0.02</span></label>
+                        <input type="range" id="encoderNoise" min="0" max="0.1" step="0.005" value="0.02"
+                            oninput="document.getElementById('encoder-val').innerText = this.value">
+                    </div>
+                    <p class="mode-desc">Each wheel's encoder accumulates small random miscounts over time. The position
+                        error grows gradually. Simulates a slipping tracking wheel or bad encoder cable.</p>
+                </div>
+
+                <!-- IMU Heading Drift -->
+                <div id="imu-ui" style="display:none;">
+                    <div class="input-row">
+                        <label>Drift Rate: <span id="imu-val">0.001</span></label>
+                        <input type="range" id="imuDriftRate" min="0" max="0.01" step="0.0005" value="0.001"
+                            oninput="document.getElementById('imu-val').innerText = this.value">
+                    </div>
+                    <p class="mode-desc">The robot's heading sensor slowly drifts, causing PID to steer toward the wrong
+                        angle. Simulates IMU gyro bias or electromagnetic interference.</p>
+                </div>
+
+                <!-- Asymmetric Acceleration -->
+                <div id="accel-ui" style="display:none;">
+                    <div class="input-row">
+                        <label>Left Accel: <span id="accel-l-val">0.5</span></label>
+                        <input type="range" id="accelRateL" min="0.1" max="2.0" step="0.05" value="0.5"
+                            oninput="document.getElementById('accel-l-val').innerText = this.value">
+                    </div>
+                    <div class="input-row">
+                        <label>Right Accel: <span id="accel-r-val">1.0</span></label>
+                        <input type="range" id="accelRateR" min="0.1" max="2.0" step="0.05" value="1.0"
+                            oninput="document.getElementById('accel-r-val').innerText = this.value">
+                    </div>
+                    <p class="mode-desc">Left and right sides ramp up at different rates, causing the robot to swing
+                        toward the slower side at the start of moves and sharp turns.</p>
                 </div>
             </section>
+
+            <!-- ── FIELD BACKGROUND ─────────────────────────────────────── -->
+            <section class="config-group">
+                <h3>Field Background</h3>
+
+                <!-- Preset selector — PRESET_BACKGROUNDS array in script.js controls these options -->
+                <div class="input-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                    <label style="color:#aaa; font-size:0.8rem;">Preset Fields</label>
+                    <select id="presetSelect" style="width:100%">
+                        <option value="">— Select a preset —</option>
+                        <!-- Options are injected by buildPresetOptions() in script.js -->
+                    </select>
+                    <button class="secondary-btn" style="margin-top:4px;" onclick="loadPresetBackground()">Load
+                        Preset</button>
+                </div>
+
+                <div style="text-align:center; color:#555; font-size:0.75rem; margin: 8px 0;">— or —</div>
+
+                <!-- Custom upload -->
+                <div class="input-row" style="flex-direction: column; align-items: flex-start; gap: 6px;">
+                    <label style="color:#aaa; font-size:0.8rem;">Upload Custom Image</label>
+                    <input type="file" id="bgUpload" accept="image/*" style="width:100%; font-size:0.8rem; color:#ccc;"
+                        onchange="handleImageUpload(event)">
+                </div>
+
+                <button class="secondary-btn" style="margin-top:8px; background:#333;" onclick="clearBackground()">✕
+                    Clear Background</button>
+            </section>
+
         </aside>
 
         <main class="viewport">
             <div class="canvas-container">
                 <canvas id="fieldCanvas" width="600" height="600"></canvas>
                 <div class="coord-overlay">X: <span id="ui-x">0</span> Y: <span id="ui-y">0</span></div>
+                <!-- Legend -->
+                <div class="legend-overlay">
+                    <span class="legend-dot" style="background:#ff8fb1;"></span> Odometry Ghost
+                    &nbsp;
+                    <span class="legend-dot" style="background:#4aa7ff;"></span> Actual Robot
+                </div>
             </div>
         </main>
     </div>

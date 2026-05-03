@@ -36,15 +36,16 @@ body {
 }
 
 .config-group {
-    border-bottom: 1px solid #333;
+    border-bottom: 1px solid #2a2a2a;
     padding-bottom: 15px;
 }
 
 h3 {
-    font-size: 0.8rem;
+    font-size: 0.75rem;
     text-transform: uppercase;
-    color: #888;
-    margin-bottom: 10px;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin: 0 0 10px 0;
 }
 
 .input-row {
@@ -58,11 +59,25 @@ h3 {
 select,
 input[type="number"],
 input[type="range"] {
-    background: #333;
+    background: #2a2a2a;
     border: 1px solid #444;
     color: white;
     border-radius: 4px;
-    padding: 4px;
+    padding: 4px 6px;
+}
+
+select {
+    max-width: 160px;
+}
+
+input[type="range"] {
+    cursor: pointer;
+    accent-color: var(--accent);
+}
+
+/* Track width range — full width */
+#trackWidth {
+    width: 100%;
 }
 
 .viewport {
@@ -86,6 +101,27 @@ input[type="range"] {
     padding: 5px 10px;
     border-radius: 4px;
     font-family: monospace;
+    font-size: 0.8rem;
+}
+
+.legend-overlay {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.legend-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
 }
 
 .scroll-list {
@@ -100,7 +136,8 @@ input[type="range"] {
 
 .path-item {
     padding: 4px 0;
-    border-bottom: 1px solid #222;
+    border-bottom: 1px solid #1e1e1e;
+    color: #ccc;
 }
 
 .primary-btn,
@@ -112,6 +149,12 @@ input[type="range"] {
     font-weight: bold;
     margin-top: 5px;
     border: none;
+    transition: opacity 0.15s;
+}
+
+.primary-btn:hover,
+.secondary-btn:hover {
+    opacity: 0.85;
 }
 
 .primary-btn {
@@ -120,6 +163,35 @@ input[type="range"] {
 }
 
 .secondary-btn {
+    background: #3a3a3a;
+    color: white;
+}
+
+/* Mode description helper text */
+.mode-desc {
+    font-size: 0.75rem;
+    color: #666;
+    margin: 8px 0 0 0;
+    line-height: 1.5;
+}
+
+/* File input styling */
+input[type="file"] {
+    background: #2a2a2a;
+    border: 1px dashed #555;
+    border-radius: 4px;
+    padding: 6px;
+    cursor: pointer;
+    color: #aaa;
+}
+
+input[type="file"]::-webkit-file-upload-button {
     background: #444;
     color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    margin-right: 6px;
 }
