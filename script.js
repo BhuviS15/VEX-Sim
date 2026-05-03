@@ -1,4 +1,7 @@
-// 1. STATE
+/** * 1. SIMULATION STATE & CONFIGURATION
+ * solid: Represents the "real world" robot affected by friction/slip.
+ * ghost: Represents the "perfect" robot (where the encoders think the robot is).
+ */
 const canvas = document.getElementById('fieldCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -14,7 +17,9 @@ let rightMultiplier = 1;
 const fieldImg = new Image();
 fieldImg.src = 'field.png';
 
-// 2. UI HELPERS
+/** * 2. UI HELPERS
+ * Manages the visibility of simulation parameters and the waypoint list.
+ */
 function toggleSlipUI() {
     const mode = document.getElementById('slipMode').value;
     document.getElementById('random-ui').style.display = mode === 'random' ? 'block' : 'none';
@@ -28,7 +33,8 @@ function updatePathUI() {
     list.innerHTML = html;
 }
 
-// 3. INTERACTION
+/** * 3. INTERACTION & CONTROL
+ */
 canvas.addEventListener('mousedown', (e) => {
     if (isRunning) return;
     const rect = canvas.getBoundingClientRect();
@@ -59,11 +65,12 @@ function runPath() {
     if (path.length === 0) return;
     resetRobot();
 
-    // Prepare Constant Bias if selected
     const mode = document.getElementById('slipMode').value;
     if (mode === 'constant') {
         const side = document.getElementById('biasSide').value;
-        const loss = parseFloat(document.getElementById('biasAmount').value);
+        // FIX 3: Scale down the loss percentage by multiplying by 0.1
+        // This prevents the robot from spinning out of control at 5% UI loss.
+        const loss = parseFloat(document.getElementById('biasAmount').value) * 0.1;
         leftMultiplier = (side === 'L') ? (1 - loss) : 1;
         rightMultiplier = (side === 'R') ? (1 - loss) : 1;
     } else {
@@ -74,23 +81,31 @@ function runPath() {
     isRunning = true;
 }
 
-// 4. PHYSICS & PID
+/** * 4. NAVIGATION & KINEMATICS (The "Brain")
+ */
 function driveToTarget(targetPos, robot) {
     if (!targetPos) return { l: 0, r: 0 };
+
     let dx = targetPos.x - robot.x;
     let dy = targetPos.y - robot.y;
     let dist = Math.hypot(dx, dy);
 
     if (dist < 5) return { l: 0, r: 0 };
 
-    let speed = Math.min(dist * 0.1, 5); // Linear P
     let targetAngle = Math.atan2(dy, dx);
     let angleErr = targetAngle - robot.theta;
 
     while (angleErr > Math.PI) angleErr -= Math.PI * 2;
     while (angleErr < -Math.PI) angleErr += Math.PI * 2;
 
-    let turn = angleErr * 2.0; // Angular P
+    let turn = angleErr * 2.0;
+
+    // FIX 2: Prevent curving arcs by scaling down forward speed when misaligned.
+    // If the angle error is larger than ~28 degrees (0.5 rad), speed drops to 0 
+    // ensuring the bot primarily turns to face the point before driving forward.
+    let speed = Math.min(dist * 0.1, 5);
+    speed *= Math.max(0, 1 - (Math.abs(angleErr) / 0.5));
+
     return { l: speed + turn, r: speed - turn };
 }
 
@@ -99,7 +114,6 @@ function update() {
         let target = path[currentWaypointIndex];
         let powers = driveToTarget(target, solid);
 
-        // Check if reached waypoint
         if (Math.hypot(target.x - solid.x, target.y - solid.y) < 8) {
             currentWaypointIndex++;
         }
@@ -110,23 +124,20 @@ function update() {
         let leftDisp, rightDisp;
 
         if (mode === 'constant') {
-            // Constant hardware bias
             leftDisp = powers.l * leftMultiplier;
             rightDisp = powers.r * rightMultiplier;
         } else {
-            // Random jitter intensity
             let intensity = parseFloat(document.getElementById('slipIntensity').value);
             leftDisp = powers.l * (1 + (Math.random() - 0.5) * intensity * 2);
             rightDisp = powers.r * (1 + (Math.random() - 0.5) * intensity * 2);
         }
 
-        // Update Solid Robot (Actual Physical Movement)
+        // --- ODOMETRY MATH ---
         solid.theta += (leftDisp - rightDisp) / trackWidth;
         let dSolid = (leftDisp + rightDisp) / 2;
         solid.x += dSolid * Math.cos(solid.theta);
         solid.y += dSolid * Math.sin(solid.theta);
 
-        // Update Ghost Robot (Perfect Sensor Math)
         ghost.theta += (powers.l - powers.r) / trackWidth;
         let dGhost = (powers.l + powers.r) / 2;
         ghost.x += dGhost * Math.cos(ghost.theta);
@@ -137,41 +148,82 @@ function update() {
     requestAnimationFrame(update);
 }
 
-// 5. DRAWING
+/** * 5. RENDERING
+ */
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Simple Background
+    // 1. Background
     ctx.fillStyle = "#1e1e1e";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Path (Straight Lines)
+    // 2. Draw the FIELD image if it's loaded
+    if (fieldImg.complete && fieldImg.src) {
+        ctx.drawImage(fieldImg, 0, 0, 600, 600);
+    }
+
+    // 3. DRAW THE PATH (Perfectly connected lines)
     if (path.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.lineWidth = 3;
+        ctx.lineJoin = "round"; // This fixes the disconnected corners
+        ctx.lineCap = "round";
+
+        // Move to start point
         ctx.moveTo(300, 300);
-        path.forEach(p => ctx.lineTo(p.x, p.y));
-        ctx.stroke();
+
+        // Connect every point in order
+        for (let i = 0; i < path.length; i++) {
+            ctx.lineTo(path[i].x, path[i].y);
+        }
+
+        ctx.stroke(); // Draw the entire path as one single shape
+
+        // 4. DRAW THE WAYPOINT DOTS
         path.forEach(p => {
+            ctx.beginPath();
             ctx.fillStyle = "var(--accent)";
-            ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fill();
         });
     }
 
-    renderBot(ghost, "#ff8fb1", 0.5); // Pink Ghost
-    renderBot(solid, "#4aa7ff", 1.0); // Blue Solid
+    // 5. DRAW THE ROBOTS
+    // We grab trackWidth here to pass it to the renderBot function
+    const trackWidthInput = document.getElementById('trackWidth');
+    const trackWidth = trackWidthInput ? parseFloat(trackWidthInput.value) : 12;
+
+    // Render the Ghost (Perfect Path)
+    renderBot(ghost, "#ff8fb1", 0.5, trackWidth);
+
+    // Render the Solid (Real Path with Slip)
+    renderBot(solid, "#4aa7ff", 1.0, trackWidth);
 }
 
-function renderBot(bot, color, alpha) {
+/**
+ * Draws the robot sprite (Square with a heading indicator)
+ * size is relative to trackWidth for realism.
+ */
+function renderBot(bot, color, alpha, trackWidth) {
+    if (!bot) return;
+
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.translate(bot.x, bot.y);
     ctx.rotate(bot.theta);
+
+    // Scaling the robot visual size based on the physics track width
+    const size = trackWidth * 3;
+    const half = size / 2;
+
+    // Main Body
     ctx.fillStyle = color;
-    ctx.fillRect(-18, -18, 36, 36);
-    ctx.fillStyle = "white"; // Front
-    ctx.fillRect(12, -2, 6, 4);
+    ctx.fillRect(-half, -half, size, size);
+
+    // Forward Heading Indicator (Small white strip at the front)
+    ctx.fillStyle = "white";
+    ctx.fillRect(half - (size / 5), -2, size / 5, 4);
+
     ctx.restore();
 }
-
-update();
