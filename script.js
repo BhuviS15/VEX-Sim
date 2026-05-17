@@ -14,6 +14,11 @@ let rightMultiplier = 1;
 // Background image state
 let backgroundImage = null;
 
+// Drag state for waypoint manipulation
+let dragIndex = -1;
+const DRAG_RADIUS = 14;
+let lastMousePos = { x: -999, y: -999 };
+
 // ── PRESETS ─────────────────────────────────────────────────────────────────
 // ADD YOUR PRESET IMAGE PATHS HERE.
 // Each entry needs: { label, src }
@@ -78,24 +83,57 @@ function updatePathUI() {
     const list = document.getElementById('path-list');
     let html = `<div class="path-item">1. Start (300, 300)</div>`;
     html += path.map((p, i) =>
-        `<div class="path-item">${i + 2}. Target (${Math.round(p.x)}, ${Math.round(p.y)})</div>`
+        `<div class="path-item">${i + 2}. Waypoint (${Math.round(p.x)}, ${Math.round(p.y)})</div>`
     ).join('');
     list.innerHTML = html;
 }
 
 // 3. INTERACTION
+function getCanvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
 canvas.addEventListener('mousedown', (e) => {
     if (isRunning) return;
-    const rect = canvas.getBoundingClientRect();
-    path.push({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const pos = getCanvasPos(e);
+
+    // Check if clicking near an existing waypoint to drag it
+    for (let i = 0; i < path.length; i++) {
+        if (Math.hypot(path[i].x - pos.x, path[i].y - pos.y) < DRAG_RADIUS) {
+            dragIndex = i;
+            return;
+        }
+    }
+
+    // Otherwise, add a new waypoint
+    path.push({ x: pos.x, y: pos.y });
     updatePathUI();
 });
 
 canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    document.getElementById('ui-x').innerText = Math.round(e.clientX - rect.left);
-    document.getElementById('ui-y').innerText = Math.round(e.clientY - rect.top);
+    const pos = getCanvasPos(e);
+    lastMousePos = pos;
+
+    document.getElementById('ui-x').innerText = Math.round(pos.x);
+    document.getElementById('ui-y').innerText = Math.round(pos.y);
+
+    // Handle dragging waypoint
+    if (dragIndex >= 0) {
+        path[dragIndex].x = pos.x;
+        path[dragIndex].y = pos.y;
+        updatePathUI();
+    }
+
+    // Cursor hint: show grab cursor near waypoints
+    if (!isRunning) {
+        const nearPoint = path.some(p => Math.hypot(p.x - pos.x, p.y - pos.y) < DRAG_RADIUS);
+        canvas.style.cursor = nearPoint ? 'grab' : 'crosshair';
+    }
 });
+
+canvas.addEventListener('mouseup', () => { dragIndex = -1; });
+canvas.addEventListener('mouseleave', () => { dragIndex = -1; });
 
 function resetRobot() {
     isRunning = false;
@@ -134,81 +172,112 @@ let encoderErrorL = 0, encoderErrorR = 0;  // cumulative encoder noise
 let imuDriftAccum = 0;                       // cumulative IMU heading error
 let accelStateL = 0, accelStateR = 0;        // current velocity for accel model
 
-function driveToTarget(targetPos, robot) {
-    if (!targetPos) return { l: 0, r: 0 };
-    let dx = targetPos.x - robot.x;
-    let dy = targetPos.y - robot.y;
-    let dist = Math.hypot(dx, dy);
+// ── LINE-FOLLOWING CONTROLLER ───────────────────────────────────────────────
+// Computes motor powers to follow a path of line segments exactly.
+// Uses two corrections simultaneously:
+//   1. Heading error: steer toward the segment's direction
+//   2. Cross-track error: perpendicular distance from the line
+// This makes the robot hug the planned path when slip=0.
+function computeMotorPowers(robot) {
+    if (currentWaypointIndex >= path.length) {
+        return { l: 0, r: 0 };
+    }
 
-    if (dist < 5) return { l: 0, r: 0 };
+    const target = path[currentWaypointIndex];
+    const prev = currentWaypointIndex === 0 ? { x: 300, y: 300 } : path[currentWaypointIndex - 1];
 
-    let speed = Math.min(dist * 0.1, 5);
-    let targetAngle = Math.atan2(dy, dx);
-    let angleErr = targetAngle - robot.theta;
+    // Vector from prev to target (the segment we're following)
+    const sx = target.x - prev.x;
+    const sy = target.y - prev.y;
+    const segLen = Math.hypot(sx, sy);
 
+    // Vector from prev to robot's current position
+    const rx = robot.x - prev.x;
+    const ry = robot.y - prev.y;
+
+    // Signed cross-track error (perpendicular distance from the line)
+    // Positive means robot is to the right of the segment
+    const crossTrack = (sx * ry - sy * rx) / (segLen || 1);
+
+    // Distance remaining to target waypoint
+    const distToTarget = Math.hypot(target.x - robot.x, target.y - robot.y);
+
+    // Advance to next waypoint when close enough
+    if (distToTarget < 8) {
+        currentWaypointIndex++;
+        return { l: 0, r: 0 };
+    }
+
+    // Speed proportional to remaining distance (slows down near waypoints)
+    const speed = Math.min(distToTarget * 0.1, 5);
+
+    // Desired heading is the direction of the segment
+    const segAngle = Math.atan2(sy, sx);
+    let angleErr = segAngle - robot.theta;
+
+    // Normalize angle error to [-π, π]
     while (angleErr > Math.PI) angleErr -= Math.PI * 2;
     while (angleErr < -Math.PI) angleErr += Math.PI * 2;
 
-    let turn = angleErr * 2.0;
+    // Combined turn output: heading P-gain + cross-track P-gain
+    const KH = 2.0;   // Heading proportional gain
+    const KC = 0.06;  // Cross-track proportional gain
+    const turn = angleErr * KH - crossTrack * KC;
+
     return { l: speed + turn, r: speed - turn };
 }
 
 function update() {
     if (isRunning && currentWaypointIndex < path.length) {
-        let target = path[currentWaypointIndex];
+        let targetPos = path[currentWaypointIndex];
 
-        // Ghost follows perfect math — always uses its own position
-        let ghostPowers = driveToTarget(target, ghost);
-        // Solid robot PID also targets the same waypoint but uses its own (drifted) position
-        let solidPowers = driveToTarget(target, solid);
-
-        if (Math.hypot(target.x - solid.x, target.y - solid.y) < 8) {
-            currentWaypointIndex++;
-        }
+        // Ghost: follows perfect line-tracking math
+        let ghostPowers = computeMotorPowers(ghost);
+        // Solid robot uses the same controller but with perturbed outputs
+        let solidPowers = computeMotorPowers(solid);
 
         const mode = document.getElementById('slipMode').value;
         const trackWidth = parseFloat(document.getElementById('trackWidth').value) || 30;
 
         let leftDisp, rightDisp;
 
-        if (mode === 'constant') {
-            // ── Constant Hardware Bias ──────────────────────────────────────
+        if (mode === 'none') {
+            // ── No error ─────────────────────────────────────────────────
+            leftDisp = solidPowers.l;
+            rightDisp = solidPowers.r;
+
+        } else if (mode === 'constant') {
+            // ── Constant Hardware Bias ──────────────────────────────────
             leftDisp = solidPowers.l * leftMultiplier;
             rightDisp = solidPowers.r * rightMultiplier;
 
         } else if (mode === 'random') {
-            // ── Random Jitter ───────────────────────────────────────────────
+            // ── Random Jitter ───────────────────────────────────────────
             let intensity = parseFloat(document.getElementById('slipIntensity').value);
             leftDisp = solidPowers.l * (1 + (Math.random() - 0.5) * intensity * 2);
             rightDisp = solidPowers.r * (1 + (Math.random() - 0.5) * intensity * 2);
 
         } else if (mode === 'encoder') {
-            // ── Encoder Noise ───────────────────────────────────────────────
-            // Simulates encoder ticks being miscounted; error accumulates over time.
+            // ── Encoder Noise ───────────────────────────────────────────
             let noiseScale = parseFloat(document.getElementById('encoderNoise').value);
             encoderErrorL += (Math.random() - 0.5) * noiseScale;
             encoderErrorR += (Math.random() - 0.5) * noiseScale;
-            // Clamp drift so it doesn't run away forever
             encoderErrorL = Math.max(-0.3, Math.min(0.3, encoderErrorL));
             encoderErrorR = Math.max(-0.3, Math.min(0.3, encoderErrorR));
             leftDisp = solidPowers.l * (1 + encoderErrorL);
             rightDisp = solidPowers.r * (1 + encoderErrorR);
 
         } else if (mode === 'imu') {
-            // ── IMU Heading Drift ───────────────────────────────────────────
-            // The robot's heading sensor drifts, causing the PID to steer wrong.
+            // ── IMU Heading Drift ───────────────────────────────────────
             let driftRate = parseFloat(document.getElementById('imuDriftRate').value);
             imuDriftAccum += driftRate * (Math.random() > 0.5 ? 1 : -1) * 0.5;
-            // Apply the drift as a heading offset — PID steers toward wrong angle
             let driftedRobot = { x: solid.x, y: solid.y, theta: solid.theta + imuDriftAccum };
-            let driftedPowers = driveToTarget(target, driftedRobot);
+            let driftedPowers = computeMotorPowers(driftedRobot);
             leftDisp = driftedPowers.l;
             rightDisp = driftedPowers.r;
 
         } else if (mode === 'accel') {
-            // ── Asymmetric Acceleration ─────────────────────────────────────
-            // Each side has a different max acceleration rate, causing the robot
-            // to swing toward the slower side on startup / sharp turns.
+            // ── Asymmetric Acceleration ─────────────────────────────────
             let accelL = parseFloat(document.getElementById('accelRateL').value);
             let accelR = parseFloat(document.getElementById('accelRateR').value);
             accelStateL += Math.max(-accelL, Math.min(accelL, solidPowers.l - accelStateL));
@@ -221,13 +290,13 @@ function update() {
             rightDisp = solidPowers.r;
         }
 
-        // ── Update Solid Robot (Actual Physical Movement with error) ────────
+        // ── Update Solid Robot (Actual Physical Movement with error) ────
         solid.theta += (leftDisp - rightDisp) / trackWidth;
         let dSolid = (leftDisp + rightDisp) / 2;
         solid.x += dSolid * Math.cos(solid.theta);
         solid.y += dSolid * Math.sin(solid.theta);
 
-        // ── Update Ghost Robot (Perfect Odometry — no error) ────────────────
+        // ── Update Ghost Robot (Perfect Odometry — no error) ────────────
         ghost.theta += (ghostPowers.l - ghostPowers.r) / trackWidth;
         let dGhost = (ghostPowers.l + ghostPowers.r) / 2;
         ghost.x += dGhost * Math.cos(ghost.theta);
@@ -261,17 +330,34 @@ function draw() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        path.forEach(p => {
-            ctx.fillStyle = "#d166eb";
+        // Waypoint dots with hover highlight
+        path.forEach((p, i) => {
+            const isNearMouse = Math.hypot(p.x - lastMousePos.x, p.y - lastMousePos.y) < DRAG_RADIUS;
+            ctx.fillStyle = isNearMouse ? "#f0a0ff" : "#d166eb";
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, isNearMouse ? 6 : 4, 0, Math.PI * 2);
             ctx.fill();
+
+            // Draw drag hint ring when hovering
+            if (isNearMouse && !isRunning) {
+                ctx.strokeStyle = "rgba(209, 102, 235, 0.4)";
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, DRAG_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
+            }
         });
     }
 
-    // Ghost = Pink (perfect odometry), rendered at half opacity
-    renderBot(ghost, "#ff8fb1", 0.5);
-    // Solid = Blue (actual robot with error), fully opaque
+    // Start position indicator
+    ctx.fillStyle = "#888";
+    ctx.beginPath();
+    ctx.arc(300, 300, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ghost = Pink (actual robot with error), rendered at half opacity
+    renderBot(ghost, "#ff8fb1", 1.0);
+    // Solid = Blue (perfect odometry), fully opaque
     renderBot(solid, "#4aa7ff", 1.0);
 }
 

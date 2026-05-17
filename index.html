@@ -10,7 +10,7 @@
 <body>
     <div class="app-shell">
         <aside class="sidebar">
-            <div class="logo">VEX-Sim <span class="version">v2.1</span></div>
+            <div class="logo">VEX-Sim <span class="version">v2.2</span></div>
 
             <!-- ── ROBOT CONFIG ─────────────────────────────────────────── -->
             <section class="config-group">
@@ -29,6 +29,8 @@
             <!-- ── AUTONOMOUS PATH ──────────────────────────────────────── -->
             <section class="timeline-group">
                 <h3>Autonomous Path</h3>
+                <div style="font-size:0.75rem; color:#888; margin-bottom:6px;">Click to add points · Drag to move them
+                </div>
                 <div id="path-list" class="scroll-list">
                     <div class="path-item">1. Start (300, 300)</div>
                 </div>
@@ -44,6 +46,7 @@
                 <div class="input-row">
                     <label>Error Type</label>
                     <select id="slipMode" onchange="toggleSlipUI()">
+                        <option value="none">None</option>
                         <option value="random">Random Jitter</option>
                         <option value="constant">Constant Bias</option>
                         <option value="encoder">Encoder Noise</option>
@@ -53,7 +56,7 @@
                 </div>
 
                 <!-- Random Jitter -->
-                <div id="random-ui">
+                <div id="random-ui" style="display:none;">
                     <div class="input-row">
                         <label>Intensity: <span id="slip-val">0</span></label>
                         <input type="range" id="slipIntensity" min="0" max="0.1" step="0.01" value="0"
@@ -154,11 +157,30 @@
             <div class="canvas-container">
                 <canvas id="fieldCanvas" width="600" height="600"></canvas>
                 <div class="coord-overlay">X: <span id="ui-x">0</span> Y: <span id="ui-y">0</span></div>
-                <!-- Legend -->
+                <!-- Improved Legend -->
                 <div class="legend-overlay">
-                    <span class="legend-dot" style="background:#ff8fb1;"></span> Odometry Ghost
-                    &nbsp;
-                    <span class="legend-dot" style="background:#4aa7ff;"></span> Actual Robot
+                    <div style="margin-bottom: 8px; font-weight: bold; color: #fff; font-size: 0.78rem;">Robot Paths
+                    </div>
+
+                    <div style="display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px;">
+                        <div
+                            style="width: 12px; height: 12px; background: #ff8fb1; border-radius: 2px; flex-shrink: 0; margin-top: 2px;">
+                        </div>
+                        <div style="color: #ddd; font-size: 0.75rem;">
+                            <div style="font-weight: 600;">Odometry Ghost</div>
+                            <div style="color: #999; font-size: 0.7rem; margin-top: 1px;">Ideal path (no error)</div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; align-items: flex-start; gap: 8px;">
+                        <div
+                            style="width: 12px; height: 12px; background: #4aa7ff; border-radius: 2px; flex-shrink: 0; margin-top: 2px;">
+                        </div>
+                        <div style="color: #ddd; font-size: 0.75rem;">
+                            <div style="font-weight: 600;">Actual Robot</div>
+                            <div style="color: #999; font-size: 0.7rem; margin-top: 1px;">With slip/drift applied</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
